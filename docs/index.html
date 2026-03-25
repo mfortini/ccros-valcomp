@@ -615,7 +615,7 @@ function addSoftware() {
   // TCO
   Object.values(state.tco.voci).forEach(a => a.push(0));
   // Requisiti
-  state.requisiti.forEach(r => r.copertura.push(0));
+  state.requisiti.forEach(r => { r.copertura.push(0); if(r.note_copertura) r.note_copertura.push(''); });
   rerenderAll();
 }
 
@@ -639,7 +639,7 @@ function removeSoftware(idx) {
   state.criteri.vitalita.contributi.splice(idx,1);
   state.criteri.vitalita.release.splice(idx,1);
   Object.values(state.tco.voci).forEach(a => a.splice(idx,1));
-  state.requisiti.forEach(r => r.copertura.splice(idx,1));
+  state.requisiti.forEach(r => { r.copertura.splice(idx,1); if(r.note_copertura) r.note_copertura.splice(idx,1); });
   rerenderAll();
 }
 
@@ -750,12 +750,12 @@ function renderRequisiti() {
     <th scope="col">Tipo</th>
     <th scope="col" style="min-width:200px">Descrizione</th>
     <th scope="col">Peso (%)</th>
-    ${range().map(i => `<th scope="col" data-sw-header="${i}" style="color:${swColor(i)};min-width:90px">${swName(i)} (%)</th>`).join('')}
+    ${range().map(i => `<th scope="col" data-sw-header="${i}" style="color:${swColor(i)};min-width:140px">${swName(i)} (%)</th>`).join('')}
     <th scope="col"><span class="visually-hidden">Azioni</span></th>
   </tr>`;
 
   if (!state.requisiti.length) {
-    tbody.innerHTML = `<tr><td colspan="${6+nSw()}" class="text-center text-muted py-3">Nessun requisito. Aggiungine con i pulsanti sopra.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${5+nSw()}" class="text-center text-muted py-3">Nessun requisito. Aggiungine con i pulsanti sopra.</td></tr>`;
     checkPesiReq(); return;
   }
 
@@ -763,14 +763,21 @@ function renderRequisiti() {
   <tr class="req-row">
     <td><code>${r.id}</code></td>
     <td><span class="badge ${r.tipo==='fn'?'bg-primary':'bg-secondary'} small">${r.tipo==='fn'?'FN':'NFN'}</span></td>
-    <td><input type="text" class="form-control form-control-sm" value="${escH(r.descrizione)}"
+    <td><input type="text" class="form-control form-control-sm" value="${escH(r.descrizione||'')}"
       oninput="reqSet('${r.id}','descrizione',this.value)" placeholder="Descrizione" /></td>
     <td><input type="number" class="form-control form-control-sm peso-input" value="${r.peso}"
       min="0" max="100" step="0.1" oninput="reqSet('${r.id}','peso',+this.value);checkPesiReq()" /></td>
-    ${range().map(i => `<td><input type="number" class="form-control form-control-sm" style="width:80px"
-      value="${r.copertura[i]||0}" min="0" max="100" step="1"
-      oninput="reqSetCop('${r.id}',${i},+this.value)" /></td>`).join('')}
-    <td><button class="btn btn-sm btn-outline-danger" onclick="removeReq('${r.id}')" aria-label="Rimuovi requisito">
+    ${range().map(i => `<td class="align-middle">
+      <div class="d-flex flex-column gap-1">
+        <input type="number" class="form-control form-control-sm" style="width:80px"
+          value="${r.copertura[i]||0}" min="0" max="100" step="1"
+          oninput="reqSetCop('${r.id}',${i},+this.value)" placeholder="%" />
+        <input type="text" class="form-control form-control-sm" style="min-width:110px"
+          value="${escH(r.note_copertura?.[i]||'')}"
+          oninput="reqSetNoteCop('${r.id}',${i},this.value)" placeholder="Nota (opz.)" />
+      </div>
+    </td>`).join('')}
+    <td class="align-middle"><button class="btn btn-sm btn-outline-danger" onclick="removeReq('${r.id}')" aria-label="Rimuovi requisito">
       <svg class="icon icon-sm" aria-hidden="true"><use href="svg/sprites.svg#it-delete"></use></svg>
     </button></td>
   </tr>`).join('');
@@ -780,12 +787,13 @@ function renderRequisiti() {
 
 function addReq(tipo) {
   const id = tipo + (++state._reqCnt);
-  state.requisiti.push({ id, tipo, descrizione:'', peso:1, copertura: Array(nSw()).fill(0) });
+  state.requisiti.push({ id, tipo, descrizione:'', peso:1, copertura: Array(nSw()).fill(0), note_copertura: Array(nSw()).fill('') });
   renderRequisiti();
 }
 function removeReq(id) { state.requisiti = state.requisiti.filter(r => r.id!==id); renderRequisiti(); }
 function reqSet(id, f, v) { const r=state.requisiti.find(r=>r.id===id); if(r) r[f]=v; }
 function reqSetCop(id, i, v) { const r=state.requisiti.find(r=>r.id===id); if(r) r.copertura[i]=v; }
+function reqSetNoteCop(id, i, v) { const r=state.requisiti.find(r=>r.id===id); if(r) { if(!r.note_copertura) r.note_copertura = Array(nSw()).fill(''); r.note_copertura[i]=v; } }
 
 function checkPesiReq() {
   const tot = state.requisiti.reduce((s,r)=>s+(+r.peso||0),0);
