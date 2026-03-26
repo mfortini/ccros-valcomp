@@ -1491,6 +1491,7 @@ document.getElementById('copy-permalink-btn').addEventListener('click', async ()
   }
   rerenderAll();
   renderPesi();
+  if (currentStep === 6) computeAndRenderResults();
   // Attiva lo step corretto (senza pushPermalink per non sovrascrivere l'hash esistente)
   document.getElementById('step-0').classList.remove('active');
   document.getElementById('step-' + currentStep).classList.add('active');
