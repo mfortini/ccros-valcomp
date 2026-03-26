@@ -59,6 +59,14 @@
       .step-panel { display: none !important; }
       #step-6 { display: block !important; }
       body { background: white; }
+      #print-appendix { display: block !important; }
+      .pa-section { page-break-before: always; margin-top: 2rem; }
+      .pa-section h3 { font-size: 1rem; font-weight: 700; border-bottom: 2px solid #333; padding-bottom: .25rem; margin-bottom: .75rem; }
+      .pa-section table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+      .pa-section th, .pa-section td { border: 1px solid #999; padding: 3px 6px; }
+      .pa-section th { background: #e8e8e8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .pa-val-si  { color: #008800; font-weight: 700; }
+      .pa-val-no  { color: #cc0000; font-weight: 700; }
     }
   </style>
 </head>
@@ -334,6 +342,9 @@
       </button>
     </div>
   </div>
+
+  <!-- Appendice di stampa – visibile solo in @media print -->
+  <div id="print-appendix" aria-hidden="true" style="display:none"></div>
 
   <!-- Navigazione wizard (sticky) -->
   <div class="step-nav">
@@ -1240,7 +1251,120 @@ document.getElementById('applica-pesi-preset').addEventListener('click', () => {
 
 document.getElementById('export-json-btn').addEventListener('click', exportJSON);
 document.getElementById('export-json-nav').addEventListener('click', exportJSON);
-document.getElementById('print-btn').addEventListener('click', () => window.print());
+document.getElementById('print-btn').addEventListener('click', () => { buildPrintAppendix(); window.print(); });
+
+// ── Appendice di stampa ───────────────────────────────────────
+function buildPrintAppendix() {
+  const el = document.getElementById('print-appendix');
+  const sw = range();
+  const hdrs = sw.map(i => `<th style="min-width:90px">${escH(swName(i))}</th>`).join('');
+
+  // ── A. Soluzioni ──
+  const aSec = `<div class="pa-section">
+    <h3>A. Soluzioni valutate</h3>
+    <table><thead><tr><th>Campo</th>${hdrs}</tr></thead><tbody>
+    ${[['Nome','nome'],['Titolarità','titolarita'],['Maintainer','maintainer'],['Sito','sito'],['Repository','repo']]
+      .map(([lbl,f]) => `<tr><td><strong>${lbl}</strong></td>${sw.map(i=>`<td>${escH(state.prodotti[i]?.[f]||'—')}</td>`).join('')}</tr>`)
+      .join('')}
+    </tbody></table></div>`;
+
+  // ── B. Requisiti ──
+  let bSec = '';
+  if (state.requisiti.length) {
+    const rRows = state.requisiti.map(r => `<tr>
+      <td><code>${r.id}</code></td>
+      <td>${r.tipo==='fn'?'FN':'NFN'}</td>
+      <td>${escH(r.descrizione||'')}</td>
+      <td>${r.peso}%</td>
+      ${sw.map(i => {
+        const cop = r.copertura[i]??0;
+        const nota = r.note_copertura?.[i]||'';
+        return `<td>${cop}%${nota?`<br><small>${escH(nota)}</small>`:''}`;
+      }).join('')}
+    </tr>`).join('');
+    bSec = `<div class="pa-section">
+      <h3>B. Requisiti funzionali e non funzionali</h3>
+      <table><thead><tr><th>ID</th><th>Tipo</th><th>Descrizione</th><th>Peso</th>${hdrs}</tr></thead>
+      <tbody>${rRows}</tbody></table></div>`;
+  }
+
+  // ── C. Criteri tecnici ──
+  let cSec = '<div class="pa-section"><h3>C. Criteri di valutazione tecnica</h3>';
+  Object.entries(CRITERI_DEF).forEach(([key, def]) => {
+    cSec += `<p style="margin:.5rem 0 .2rem;font-weight:700">${def.label}</p>`;
+    if (def.tipo === 'sinon' || def.tipo === 'sinon_nonec') {
+      const valLabel = {si:'sì', no:'no', nonec:'non nec.', '':'—'};
+      const valClass = {si:'pa-val-si', no:'pa-val-no', nonec:'', '':''};
+      cSec += `<table><thead><tr><th>Criterio</th>${hdrs}</tr></thead><tbody>`;
+      def.items.forEach(item => {
+        const cur = state.criteri[key].items[item.id] || sw.map(()=>'');
+        cSec += `<tr><td>${escH(item.testo)}</td>${sw.map(i=>{
+          const v = cur[i]||'';
+          return `<td class="${valClass[v]||''}">${valLabel[v]??v}</td>`;
+        }).join('')}</tr>`;
+      });
+      cSec += '</tbody></table>';
+    } else if (def.tipo === 'radio') {
+      cSec += `<table><thead><tr><th>Opzione</th>${hdrs}</tr></thead><tbody>`;
+      def.items.forEach(item => {
+        cSec += `<tr><td>${escH(item.testo)}</td>${sw.map(i=>{
+          const sel = state.criteri[key].scelta[i] === item.valore;
+          return `<td>${sel?'<strong>✓</strong>':''}</td>`;
+        }).join('')}</tr>`;
+      });
+      cSec += '</tbody></table>';
+    } else if (def.tipo === 'numero_dipendenze') {
+      cSec += `<table><thead><tr><th>Tipo</th>${hdrs}</tr></thead><tbody>
+        <tr><td>Dipendenze proprietarie</td>${sw.map(i=>`<td>${state.criteri.dipendenze.proprietario[i]||0}</td>`).join('')}</tr>
+        <tr><td>Dipendenze open source</td>${sw.map(i=>`<td>${state.criteri.dipendenze.opensource[i]||0}</td>`).join('')}</tr>
+      </tbody></table>`;
+    } else if (def.tipo === 'numero_pa') {
+      cSec += `<table><thead><tr><th>Voce</th>${hdrs}</tr></thead><tbody>
+        <tr><td>PA che utilizzano</td>${sw.map(i=>`<td>${state.criteri.numero_pa.utilizzano[i]||0}</td>`).join('')}</tr>
+        <tr><td>PA interessate</td>${sw.map(i=>`<td>${state.criteri.numero_pa.interessate[i]||0}</td>`).join('')}</tr>
+      </tbody></table>`;
+    } else if (def.tipo === 'vitalita') {
+      const rows=[['giorni',"Giorni dall'ultimo commit"],['commit','Commit (3 anni)'],['contributi','Contributori (3 anni)'],['release','Release (3 anni)']];
+      cSec += `<table><thead><tr><th>Metrica</th>${hdrs}</tr></thead><tbody>`;
+      rows.forEach(([f,lbl])=>{
+        cSec += `<tr><td>${lbl}</td>${sw.map(i=>`<td>${state.criteri.vitalita[f][i]||0}</td>`).join('')}</tr>`;
+      });
+      cSec += '</tbody></table>';
+    }
+  });
+  cSec += '</div>';
+
+  // ── D. TCO ──
+  const durationLabel = `Durata ${state.tco.durata} anni, ${state.tco.npa} PA`;
+  let dSec = `<div class="pa-section"><h3>D. Costi — TCO (${durationLabel})</h3>
+    <table><thead><tr><th>Voce</th>${hdrs}</tr></thead><tbody>`;
+  let currentGruppo = '';
+  TCO_VOCI.forEach(v => {
+    if (v.gruppo !== currentGruppo) {
+      currentGruppo = v.gruppo;
+      dSec += `<tr><td colspan="${1+sw.length}" style="background:#eee;font-weight:700">${v.gruppo}</td></tr>`;
+    }
+    const vals = state.tco.voci[v.id] || sw.map(()=>0);
+    dSec += `<tr><td>${escH(v.label)}</td>${sw.map(i=>`<td>${fmtEur(vals[i]||0)}</td>`).join('')}</tr>`;
+  });
+  const tcoTot = sw.map(i => TCO_VOCI.reduce((s,v)=>s+(state.tco.voci[v.id]?.[i]||0),0));
+  dSec += `<tr style="font-weight:700;background:#333;color:#fff"><td>TOTALE TCO</td>${sw.map(i=>`<td>${fmtEur(tcoTot[i])}</td>`).join('')}</tr>`;
+  dSec += '</tbody></table></div>';
+
+  // ── E. Pesi ──
+  let eSec = `<div class="pa-section"><h3>E. Pesi criteri (metodo TOPSIS)</h3>
+    <table><thead><tr><th>Criterio</th><th>Peso</th></tr></thead><tbody>`;
+  PESI_DEF.forEach(p => {
+    eSec += `<tr><td>${p.label}</td><td><strong>${state.pesi[p.id]}</strong></td></tr>`;
+  });
+  eSec += '</tbody></table></div>';
+
+  el.innerHTML = `<div style="margin-top:3rem;border-top:3px solid #333;padding-top:1rem">
+    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:.5rem">Appendice — Dati di valutazione</h2>
+    <p style="font-size:.8rem;color:#555">Generato il ${new Date().toLocaleDateString('it-IT')} — ${escH(state.meta.pa||'')} — ${escH(state.meta.oggetto||'')}</p>
+    ${aSec}${bSec}${cSec}${dSec}${eSec}
+  </div>`;
+}
 document.getElementById('reset-btn').addEventListener('click', () => {
   if (confirm('Iniziare una nuova valutazione? Tutti i dati andranno persi.')) {
     history.replaceState(null, '', location.pathname + location.search);
@@ -1264,22 +1388,61 @@ document.querySelectorAll('#steppers-list li').forEach((li, i) => {
   li.addEventListener('click', () => goToStep(i));
 });
 
-// ── Permalink automatico (hash = stato + step corrente) ──────
-function encodeStateToHash(s, step) {
+// ── Permalink automatico con compressione gzip ───────────────
+function _bytesToB64url(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+function _b64urlToBytes(b64) {
+  b64 = b64.replace(/-/g,'+').replace(/_/g,'/');
+  while (b64.length % 4) b64 += '=';
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function _gzipBytes(input) {
+  const cs = new CompressionStream('gzip');
+  const w = cs.writable.getWriter(); w.write(input); w.close();
+  const chunks = []; const r = cs.readable.getReader();
+  for (;;) { const {done,value} = await r.read(); if (done) break; chunks.push(value); }
+  let len = 0; chunks.forEach(c => len += c.length);
+  const out = new Uint8Array(len); let off = 0;
+  chunks.forEach(c => { out.set(c,off); off += c.length; });
+  return out;
+}
+async function _gunzipBytes(input) {
+  const ds = new DecompressionStream('gzip');
+  const w = ds.writable.getWriter(); w.write(input); w.close();
+  const chunks = []; const r = ds.readable.getReader();
+  for (;;) { const {done,value} = await r.read(); if (done) break; chunks.push(value); }
+  let len = 0; chunks.forEach(c => len += c.length);
+  const out = new Uint8Array(len); let off = 0;
+  chunks.forEach(c => { out.set(c,off); off += c.length; });
+  return new TextDecoder().decode(out);
+}
+
+async function encodeStateToHash(s, step) {
   try {
     const snap = JSON.parse(JSON.stringify(s));
     delete snap._reqCnt;
     const payload = { _step: step ?? currentStep, _data: snap };
-    return '#v1/' + btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    const bytes = await _gzipBytes(new TextEncoder().encode(JSON.stringify(payload)));
+    return '#v2/' + _bytesToB64url(bytes);
   } catch { return ''; }
 }
 
-function decodeStateFromHash(hash) {
+async function decodeStateFromHash(hash) {
   try {
-    if (!hash || !hash.startsWith('#v1/')) return null;
-    const json = decodeURIComponent(escape(atob(hash.slice(4))));
+    if (!hash) return null;
+    let json;
+    if (hash.startsWith('#v2/')) {
+      json = await _gunzipBytes(_b64urlToBytes(hash.slice(4)));
+    } else if (hash.startsWith('#v1/')) {
+      json = decodeURIComponent(escape(atob(hash.slice(4))));
+    } else { return null; }
     const payload = JSON.parse(json);
-    // Supporta sia il vecchio formato (stato grezzo) sia il nuovo ({ _step, _data })
     const restoredState = payload._data || payload;
     const restoredStep  = payload._step ?? 0;
     if (!restoredState.prodotti || !Array.isArray(restoredState.prodotti)) return null;
@@ -1287,21 +1450,21 @@ function decodeStateFromHash(hash) {
   } catch { return null; }
 }
 
-function pushPermalink() {
-  const hash = encodeStateToHash(state, currentStep);
+async function pushPermalink() {
+  const hash = await encodeStateToHash(state, currentStep);
   if (hash) history.replaceState(null, '', hash);
 }
 
 // Debounce per aggiornamenti frequenti da input
 let _plTimer = null;
-function schedulePL() { clearTimeout(_plTimer); _plTimer = setTimeout(pushPermalink, 600); }
+function schedulePL() { clearTimeout(_plTimer); _plTimer = setTimeout(() => pushPermalink(), 600); }
 
 // Salva automaticamente ad ogni input nel documento
 document.getElementById('main-content').addEventListener('input', schedulePL);
 
 // Copia URL corrente negli appunti
-document.getElementById('copy-permalink-btn').addEventListener('click', () => {
-  pushPermalink(); // forza aggiornamento immediato
+document.getElementById('copy-permalink-btn').addEventListener('click', async () => {
+  await pushPermalink();
   const url = location.href;
   navigator.clipboard.writeText(url).then(() => {
     const btn = document.getElementById('copy-permalink-btn');
@@ -1313,8 +1476,8 @@ document.getElementById('copy-permalink-btn').addEventListener('click', () => {
 });
 
 // ── Init ─────────────────────────────────────────────────────
-(function init() {
-  const fromHash = decodeStateFromHash(location.hash);
+(async function init() {
+  const fromHash = await decodeStateFromHash(location.hash);
   if (fromHash) {
     state = fromHash.state;
     state._reqCnt = Math.max(0, ...(state.requisiti||[]).map(r => parseInt(r.id.replace(/\D/g,''))||0));
